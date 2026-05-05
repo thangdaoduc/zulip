@@ -521,6 +521,20 @@ def validate_poll_data(poll_data: object, is_widget_author: bool) -> None:
         checker("poll data", poll_data)
         return
 
+    if poll_data["type"] == "close":
+        if not is_widget_author:
+            raise ValidationError("You can't close a poll unless you are the author.")
+        checker = check_dict_only([("type", check_string)])
+        checker("poll data", poll_data)
+        return
+
+    if poll_data["type"] == "open":
+        if not is_widget_author:
+            raise ValidationError("You can't reopen a poll unless you are the author.")
+        checker = check_dict_only([("type", check_string)])
+        checker("poll data", poll_data)
+        return
+
     raise ValidationError(f"Unknown type for poll data: {poll_data['type']}")
 
 

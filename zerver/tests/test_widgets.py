@@ -258,6 +258,8 @@ class WidgetContentTestCase(ZulipTestCase):
             extra_data=dict(
                 options=["Red", "Green", "Blue", "Yellow"],
                 question="What is your favorite color?",
+                multi_select=False,
+                allow_new_options=True,
             ),
         )
 
@@ -277,6 +279,8 @@ class WidgetContentTestCase(ZulipTestCase):
             extra_data=dict(
                 options=[],
                 question="",
+                multi_select=False,
+                allow_new_options=True,
             ),
         )
 
@@ -478,6 +482,14 @@ class WidgetContentTestCase(ZulipTestCase):
         assert_success(dict(type="new_option", idx=7, option="maybe"))
         assert_success(dict(type="question", question="what's for dinner?"))
 
+        # close/open validation
+        assert_success(dict(type="close"))
+        assert_success(dict(type="open"))
+
+        # close/open with extra fields should fail
+        assert_error('{"type": "close", "reason": "time"}', "Unexpected arguments")
+        assert_error('{"type": "open", "x": 1}', "Unexpected arguments")
+
     def test_todo_type_validation(self) -> None:
         sender = self.example_user("cordelia")
         stream_name = "Verona"
@@ -566,3 +578,212 @@ class WidgetContentTestCase(ZulipTestCase):
         submessage.content = '{"widget_type": "todo"}'
         submessage.save()
         self.assertEqual(get_widget_type(message_id=message.id), "todo")
+
+    def test_poll_close_open(self) -> None:
+        cordelia = self.example_user("cordelia")
+        hamlet = self.example_user("hamlet")
+        stream_name = "Verona"
+        content = "/poll Preference?\n\nyes\nno"
+
+        payload = dict(
+            type="stream",
+            to=orjson.dumps(stream_name).decode(),
+            topic="whatever",
+            content=content,
+        )
+        result = self.api_post(cordelia, "/api/v1/messages", payload)
+        self.assert_json_success(result)
+
+        message = self.get_last_message()
+
+        def post(sender: UserProfile, data: dict[str, object]) -> "TestHttpResponse":
+            payload = dict(
+                message_id=message.id, msg_type="widget", content=orjson.dumps(data).decode()
+            )
+            return self.api_post(sender, "/api/v1/submessage", payload)
+
+        # Author can close poll
+        result = post(cordelia, dict(type="close"))
+        self.assert_json_success(result)
+
+        # Non-author cannot close poll
+        result = post(hamlet, dict(type="close"))
+        self.assert_json_error(result, "You can't close a poll unless you are the author.")
+
+        # Voting on closed poll is rejected
+        result = post(cordelia, dict(type="vote", key="canned,0", vote=1))
+        self.assert_json_error(result, "This poll is closed.")
+
+        # Adding option to closed poll is rejected
+        result = post(cordelia, dict(type="new_option", idx=2, option="maybe"))
+        self.assert_json_error(result, "This poll is closed.")
+
+        # Author can reopen poll
+        result = post(cordelia, dict(type="open"))
+        self.assert_json_success(result)
+
+        # Voting works again after reopen
+        result = post(cordelia, dict(type="vote", key="canned,0", vote=1))
+        self.assert_json_success(result)
+
+        # Non-author cannot reopen poll
+        result = post(cordelia, dict(type="close"))
+        self.assert_json_success(result)
+        result = post(hamlet, dict(type="open"))
+        self.assert_json_error(result, "You can't reopen a poll unless you are the author.")
+
+    def test_poll_close_flag_stored_in_widget_submessage(self) -> None:
+        """The is_closed flag is written to the widget submessage extra_data,
+        not inferred by scanning all submessages. This ensures O(1) lookups."""
+        cordelia = self.example_user("cordelia")
+        stream_name = "Verona"
+        content = "/poll Preference?\n\nyes\nno"
+
+        payload = dict(
+            type="stream",
+            to=orjson.dumps(stream_name).decode(),
+            topic="whatever",
+            content=content,
+        )
+        result = self.api_post(cordelia, "/api/v1/messages", payload)
+        self.assert_json_success(result)
+
+        message = self.get_last_message()
+        widget_sub = SubMessage.objects.filter(message_id=message.id).order_by("id").first()
+        assert widget_sub is not None
+
+        # Initially no is_closed flag
+        data = orjson.loads(widget_sub.content)
+        self.assertNotIn("is_closed", data.get("extra_data", {}))
+
+        # Close the poll
+        payload = dict(
+            message_id=message.id,
+            msg_type="widget",
+            content=orjson.dumps(dict(type="close")).decode(),
+        )
+        self.assert_json_success(self.api_post(cordelia, "/api/v1/submessage", payload))
+
+        # is_closed=True now stored in the widget submessage
+        widget_sub.refresh_from_db()
+        data = orjson.loads(widget_sub.content)
+        self.assertEqual(data["extra_data"]["is_closed"], True)
+
+        # Reopen
+        payload = dict(
+            message_id=message.id,
+            msg_type="widget",
+            content=orjson.dumps(dict(type="open")).decode(),
+        )
+        self.assert_json_success(self.api_post(cordelia, "/api/v1/submessage", payload))
+
+        widget_sub.refresh_from_db()
+        data = orjson.loads(widget_sub.content)
+        self.assertEqual(data["extra_data"]["is_closed"], False)
+
+    def test_poll_allow_new_options(self) -> None:
+        cordelia = self.example_user("cordelia")
+        hamlet = self.example_user("hamlet")
+        stream_name = "Verona"
+        content = "/poll Preference?\n\nyes\nno"
+
+        widget_content = dict(
+            widget_type="poll",
+            extra_data=dict(
+                question="Preference?",
+                options=["yes", "no"],
+                multi_select=False,
+                allow_new_options=False,
+            ),
+        )
+
+        payload = dict(
+            type="stream",
+            to=orjson.dumps(stream_name).decode(),
+            topic="whatever",
+            content=content,
+            widget_content=orjson.dumps(widget_content).decode(),
+        )
+        result = self.api_post(cordelia, "/api/v1/messages", payload)
+        self.assert_json_success(result)
+
+        message = self.get_last_message()
+
+        def post(sender: UserProfile, data: dict[str, object]) -> "TestHttpResponse":
+            payload = dict(
+                message_id=message.id, msg_type="widget", content=orjson.dumps(data).decode()
+            )
+            return self.api_post(sender, "/api/v1/submessage", payload)
+
+        # Non-author cannot add new option when allow_new_options=False
+        result = post(hamlet, dict(type="new_option", idx=2, option="maybe"))
+        self.assert_json_error(result, "This poll does not allow new options.")
+
+        # Author can still add new option
+        result = post(cordelia, dict(type="new_option", idx=2, option="maybe"))
+        self.assert_json_success(result)
+
+        # Voting still works for everyone
+        result = post(hamlet, dict(type="vote", key="canned,0", vote=1))
+        self.assert_json_success(result)
+
+    def test_poll_multi_select_extra_data(self) -> None:
+        sender = self.example_user("cordelia")
+        stream_name = "Verona"
+        content = "/poll Preference?\n\nyes\nno"
+
+        widget_content = dict(
+            widget_type="poll",
+            extra_data=dict(
+                question="Preference?",
+                options=["yes", "no"],
+                multi_select=True,
+                allow_new_options=False,
+            ),
+        )
+
+        payload = dict(
+            type="stream",
+            to=orjson.dumps(stream_name).decode(),
+            topic="whatever",
+            content=content,
+            widget_content=orjson.dumps(widget_content).decode(),
+        )
+        result = self.api_post(sender, "/api/v1/messages", payload)
+        self.assert_json_success(result)
+
+        message = self.get_last_message()
+
+        submessage = SubMessage.objects.get(message_id=message.id)
+        saved_data = orjson.loads(submessage.content)
+        self.assertEqual(saved_data["extra_data"]["multi_select"], True)
+        self.assertEqual(saved_data["extra_data"]["allow_new_options"], False)
+
+    def test_submessage_timestamp(self) -> None:
+        cordelia = self.example_user("cordelia")
+        stream_name = "Verona"
+        content = "/poll Preference?\n\nyes\nno"
+
+        payload = dict(
+            type="stream",
+            to=orjson.dumps(stream_name).decode(),
+            topic="whatever",
+            content=content,
+        )
+        result = self.api_post(cordelia, "/api/v1/messages", payload)
+        self.assert_json_success(result)
+
+        message = self.get_last_message()
+
+        poll_payload = dict(
+            message_id=message.id,
+            msg_type="widget",
+            content=orjson.dumps(dict(type="vote", key="canned,0", vote=1)).decode(),
+        )
+        result = self.api_post(cordelia, "/api/v1/submessage", poll_payload)
+        self.assert_json_success(result)
+
+        submessage = SubMessage.objects.get(message_id=message.id)
+        saved_data = orjson.loads(submessage.content)
+        self.assertIn("timestamp", saved_data)
+        self.assertIsInstance(saved_data["timestamp"], float)

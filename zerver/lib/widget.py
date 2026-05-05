@@ -11,6 +11,8 @@ from zerver.models import Message, SubMessage
 class PollData:
     question: str
     options: list[str]
+    multi_select: bool = False
+    allow_new_options: bool = True
 
 
 @dataclass

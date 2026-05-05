@@ -455,7 +455,7 @@ def check_widget_content(widget_content: object) -> dict[str, Any]:
                         ("long_name", check_string),
                         ("reply", check_string),
                     ]
-                ),
+                )
             )
 
             # We re-check "type" here just to avoid it looking
@@ -473,6 +473,30 @@ def check_widget_content(widget_content: object) -> dict[str, Any]:
             return widget_content
 
         raise ValidationError("unknown zform type: " + extra_data["type"])
+
+    if widget_type == "poll":
+        checker = check_dict_only(
+            [
+                ("question", check_string),
+                ("options", check_list(check_string)),
+            ],
+            [
+                ("multi_select", check_bool),
+                ("allow_new_options", check_bool),
+            ],
+        )
+        checker("extra_data", extra_data)
+        return widget_content
+
+    if widget_type == "todo":
+        checker = check_dict_only(
+            [
+                ("task_list_title", check_string),
+                ("tasks", check_list(check_dict([("task", check_string), ("desc", check_string)]))),
+            ]
+        )
+        checker("extra_data", extra_data)
+        return widget_content
 
     raise ValidationError("unknown widget type: " + widget_type)
 

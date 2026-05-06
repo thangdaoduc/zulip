@@ -15,7 +15,7 @@ from zerver.worker.base import QueueProcessingWorker, WorkerTimeoutError, assign
 logger = logging.getLogger(__name__)
 
 
-@assign_queue("email_mirror")
+@assign_queue("email_mirror", False)
 class MirrorWorker(QueueProcessingWorker):
     MAX_CONSUME_SECONDS = 5
 

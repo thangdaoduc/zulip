@@ -199,7 +199,7 @@ class UserBaseSettings(models.Model):
 
     # Stream notifications.
     enable_stream_desktop_notifications = models.BooleanField(default=False)
-    enable_stream_email_notifications = models.BooleanField(default=False)
+    enable_stream_email_notifications = models.BooleanField(default=False)  # Already disabled, keep disabled
     enable_stream_push_notifications = models.BooleanField(default=False)
     enable_stream_audible_notifications = models.BooleanField(default=False)
     notification_sound = models.CharField(max_length=20, default="zulip")
@@ -207,7 +207,7 @@ class UserBaseSettings(models.Model):
 
     # Followed Topics notifications.
     enable_followed_topic_desktop_notifications = models.BooleanField(default=True)
-    enable_followed_topic_email_notifications = models.BooleanField(default=True)
+    enable_followed_topic_email_notifications = models.BooleanField(default=False)  # Disabled for fork without email
     enable_followed_topic_push_notifications = models.BooleanField(default=True)
     enable_followed_topic_audible_notifications = models.BooleanField(default=True)
     enable_followed_topic_wildcard_mentions_notify = models.BooleanField(default=True)
@@ -216,8 +216,8 @@ class UserBaseSettings(models.Model):
     enable_desktop_notifications = models.BooleanField(default=True)
     pm_content_in_desktop_notifications = models.BooleanField(default=True)
     enable_sounds = models.BooleanField(default=True)
-    enable_offline_email_notifications = models.BooleanField(default=True)
-    message_content_in_email_notifications = models.BooleanField(default=True)
+    enable_offline_email_notifications = models.BooleanField(default=False)  # Disabled for fork without email
+    message_content_in_email_notifications = models.BooleanField(default=False)  # Disabled for fork without email
     enable_offline_push_notifications = models.BooleanField(default=True)
     enable_online_push_notifications = models.BooleanField(default=True)
 
@@ -235,9 +235,9 @@ class UserBaseSettings(models.Model):
         default=DESKTOP_ICON_COUNT_DISPLAY_MESSAGES
     )
 
-    enable_digest_emails = models.BooleanField(default=True)
-    enable_login_emails = models.BooleanField(default=True)
-    enable_marketing_emails = models.BooleanField(default=True)
+    enable_digest_emails = models.BooleanField(default=False)  # Disabled for fork without email
+    enable_login_emails = models.BooleanField(default=False)  # Disabled for fork without email
+    enable_marketing_emails = models.BooleanField(default=False)  # Disabled for fork without email
     presence_enabled = models.BooleanField(default=True)
 
     REALM_NAME_IN_EMAIL_NOTIFICATIONS_POLICY_AUTOMATIC = 1

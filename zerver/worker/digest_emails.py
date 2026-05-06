@@ -11,7 +11,7 @@ from zerver.worker.base import QueueProcessingWorker, assign_queue
 logger = logging.getLogger(__name__)
 
 
-@assign_queue("digest_emails")
+@assign_queue("digest_emails", enabled=False)
 class DigestWorker(QueueProcessingWorker):  # nocoverage
     # Who gets a digest is entirely determined by the enqueue_digest_emails
     # management command, not here.

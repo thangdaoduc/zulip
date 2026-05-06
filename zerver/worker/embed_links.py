@@ -19,7 +19,7 @@ from zerver.worker.base import InterruptConsumeError, QueueProcessingWorker, ass
 logger = logging.getLogger(__name__)
 
 
-@assign_queue("embed_links")
+@assign_queue("embed_links", False)
 class FetchLinksEmbedData(QueueProcessingWorker):
     # This is a slow queue with network requests, so a disk write is negligible.
     # Update stats file after every consume call.

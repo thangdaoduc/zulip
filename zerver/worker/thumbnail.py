@@ -27,7 +27,7 @@ from zerver.worker.base import QueueProcessingWorker, assign_queue
 logger = logging.getLogger(__name__)
 
 
-@assign_queue("thumbnail")
+@assign_queue("thumbnail", False)
 class ThumbnailWorker(QueueProcessingWorker):
     @override
     def consume(self, event: dict[str, Any]) -> None:

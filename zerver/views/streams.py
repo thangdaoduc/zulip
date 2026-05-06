@@ -1077,26 +1077,11 @@ def send_user_subscribed_and_new_channel_notifications(
                     history_public_to_subscribers=stream.history_public_to_subscribers,
                     is_web_public=stream.is_web_public,
                 )
-                new_channel_message = None
 
-                if policy_key == "web_public":
-                    new_channel_message = _(
-                        "**Web-public** channel created by {user_name}. **Description:**"
-                    )
-                elif policy_key == "public":
-                    new_channel_message = _(
-                        "**Public** channel created by {user_name}. **Description:**"
-                    )
-                elif policy_key == "private_shared_history":
-                    new_channel_message = _(
-                        "**Private, shared history** channel created by {user_name}. **Description:**"
-                    )
-                elif policy_key == "private_protected_history":
-                    new_channel_message = _(
-                        "**Private, protected history** channel created by {user_name}. **Description:**"
-                    )
+                new_channel_message = _(
+                    "**Private** created by  {user_name}"
+                )
 
-                assert new_channel_message is not None
                 if user_profile.realm.send_channel_events_messages:
                     notifications.append(
                         internal_prep_stream_message(
@@ -1106,7 +1091,6 @@ def send_user_subscribed_and_new_channel_notifications(
                             content=new_channel_message.format(
                                 user_name=silent_mention_syntax_for_user(user_profile),
                             )
-                            + f"\n```` quote\n{stream_description}\n````",
                         ),
                     )
 

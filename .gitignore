@@ -38,6 +38,8 @@ package-lock.json
 /.ruff_cache
 /.venv
 
+/.gitnexus
+
 # Generated i18n data
 /locale/en
 /locale/language_options.json

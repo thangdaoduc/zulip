@@ -462,7 +462,7 @@ class Realm(models.Model):
     ZULIP_DISCUSSION_CHANNEL_NAME = gettext_lazy("Zulip")
     ZULIP_SANDBOX_CHANNEL_NAME = gettext_lazy("sandbox")
     DEFAULT_NOTIFICATION_STREAM_NAME = gettext_lazy("general")
-    STREAM_EVENTS_NOTIFICATION_TOPIC_NAME = gettext_lazy("channel events")
+    STREAM_EVENTS_NOTIFICATION_TOPIC_NAME = gettext_lazy("general")
     REPORT_MESSAGE_REASONS = {
         "spam": gettext_lazy("Spam"),
         "harassment": gettext_lazy("Harassment"),

@@ -7171,6 +7171,11 @@ msgstr ""
 
 #: zerver/views/streams.py
 #, python-brace-format
+msgid "**Private** created by  {user_name}"
+msgstr "**Nhóm riêng** được tạo bởi {user_name}"
+
+#: zerver/views/streams.py
+#, python-brace-format
 msgid "**Web-public** channel created by {user_name}. **Description:**"
 msgstr ""
 

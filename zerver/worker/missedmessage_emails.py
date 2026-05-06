@@ -22,7 +22,7 @@ from zerver.worker.base import QueueProcessingWorker, assign_queue
 logger = logging.getLogger(__name__)
 
 
-@assign_queue("missedmessage_emails")
+@assign_queue("missedmessage_emails", enabled=False)
 class MissedMessageWorker(QueueProcessingWorker):
     # Aggregate all messages received over the last several seconds
     # (configurable by each recipient) to let someone finish sending a

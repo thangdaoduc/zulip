@@ -237,15 +237,15 @@ class Realm(models.Model):
     )
 
     # Whether digest emails are enabled for the organization.
-    digest_emails_enabled = models.BooleanField(default=False)
+    digest_emails_enabled = models.BooleanField(default=False)  # Keep disabled for fork without email
     # Day of the week on which the digest is sent (default: Tuesday).
     digest_weekday = models.SmallIntegerField(default=1)
 
     # Whether channel event messages are enabled in the organizaton.
     send_channel_events_messages = models.BooleanField(default=False)
 
-    send_welcome_emails = models.BooleanField(default=True)
-    message_content_allowed_in_email_notifications = models.BooleanField(default=True)
+    send_welcome_emails = models.BooleanField(default=False)  # Disabled for fork without email
+    message_content_allowed_in_email_notifications = models.BooleanField(default=False)  # Disabled for fork without email
 
     # Whether the organization's security policy allows owners to take
     # actions like full data exports that grant access to all private

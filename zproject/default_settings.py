@@ -42,7 +42,7 @@ FAKE_EMAIL_DOMAIN = EXTERNAL_HOST_WITHOUT_PORT
 EMAIL_MAX_CONNECTION_LIFETIME_IN_MINUTES: int | None = 0
 
 # SMTP settings
-EMAIL_HOST: str | None = None
+EMAIL_HOST: str | None = None  # Explicitly no email host for fork without email
 # Other settings, like EMAIL_HOST_USER, EMAIL_PORT, and EMAIL_USE_TLS,
 # we leave up to Django's defaults.
 
@@ -484,7 +484,7 @@ USING_PGROONGA = False
 
 # How Django should send emails.  Set for most contexts in settings.py, but
 # available for sysadmin override in unusual cases.
-EMAIL_BACKEND: str | None = None
+EMAIL_BACKEND: str | None = "django.core.mail.backends.dummy.EmailBackend"
 
 # Whether to give admins a warning in the web app that email isn't set up.
 # Set in settings.py when email isn't configured.

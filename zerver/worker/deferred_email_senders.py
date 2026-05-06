@@ -3,6 +3,6 @@ from zerver.worker.base import assign_queue
 from zerver.worker.email_senders_base import EmailSendingWorker
 
 
-@assign_queue("deferred_email_senders")
+@assign_queue("deferred_email_senders", enabled=False)
 class DeferredEmailSenderWorker(EmailSendingWorker):
     pass

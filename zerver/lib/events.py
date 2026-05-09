@@ -51,6 +51,7 @@ from zerver.lib.message import (
     remove_message_id_from_unread_mgs,
 )
 from zerver.lib.muted_users import get_user_mutes
+from zerver.lib.user_favorites import get_user_favorites
 from zerver.lib.narrow_helpers import NeverNegatedNarrowTerm, read_stop_words
 from zerver.lib.narrow_predicate import check_narrow_for_events
 from zerver.lib.navigation_views import get_navigation_views_for_user
@@ -360,6 +361,11 @@ def fetch_initial_state_data(
 
     if want("muted_users"):
         state["muted_users"] = [] if user_profile is None else get_user_mutes(user_profile)
+
+    if want("user_favorite"):
+        state["favorites"] = (
+            [] if user_profile is None else get_user_favorites(user_profile)
+        )
 
     if want("presence"):
         if presence_last_update_id_fetched_by_client is not None or simplified_presence_events:
@@ -1898,6 +1904,14 @@ def apply_event(
         state["muted_topics"] = event["muted_topics"]
     elif event["type"] == "muted_users":
         state["muted_users"] = event["muted_users"]
+    elif event["type"] == "user_favorite":
+        favs = state.setdefault("favorites", [])
+        target = event["favorite"]
+        if event["op"] == "add":
+            if target not in favs:
+                favs.append(target)
+        elif event["op"] == "remove":
+            state["favorites"] = [f for f in favs if f != target]
     elif event["type"] == "realm_linkifiers":
         # We only send realm_linkifiers event to clients that indicate
         # support for linkifiers with URL templates. Otherwise, silently

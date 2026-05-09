@@ -254,3 +254,103 @@ def orjson_dumps(value: object) -> str:
     import orjson
 
     return orjson.dumps(value).decode()
+
+
+class FavoriteRegisterTest(ZulipTestCase):
+    def test_register_includes_favorites(self) -> None:
+        from zerver.lib.user_favorites import get_user_favorites
+        from zerver.models import Stream
+        from zerver.models.recipients import get_or_create_direct_message_group
+
+        hamlet = self.example_user("hamlet")
+        cordelia = self.example_user("cordelia")
+        self.subscribe(hamlet, "Verona")
+        stream = Stream.objects.get(name="Verona", realm=hamlet.realm)
+        do_add_user_favorite(hamlet, stream.recipient, acting_user=hamlet)
+
+        dmg = get_or_create_direct_message_group(sorted([hamlet.id, cordelia.id]))
+        assert dmg.recipient is not None
+        do_add_user_favorite(hamlet, dmg.recipient, acting_user=hamlet)
+
+        favorites = get_user_favorites(hamlet)
+        self.assertCountEqual(
+            favorites,
+            [
+                {"type": "channel", "id": stream.id},
+                {"type": "dm", "user_ids": [cordelia.id]},
+            ],
+        )
+
+    def test_apply_event_add_remove(self) -> None:
+        from zerver.lib.events import apply_events
+
+        hamlet = self.example_user("hamlet")
+        state: dict[str, object] = {"favorites": []}
+
+        apply_events(
+            user_profile=hamlet,
+            state=state,
+            events=[
+                {
+                    "id": 1,
+                    "type": "user_favorite",
+                    "op": "add",
+                    "favorite": {"type": "channel", "id": 5},
+                }
+            ],
+            fetch_event_types=None,
+            client_gravatar=False,
+            slim_presence=False,
+            include_subscribers=False,
+            linkifier_url_template=True,
+            user_list_incomplete=False,
+            include_deactivated_groups=False,
+        )
+        self.assertEqual(
+            state["favorites"], [{"type": "channel", "id": 5}]
+        )
+
+        # Idempotent add does not duplicate.
+        apply_events(
+            user_profile=hamlet,
+            state=state,
+            events=[
+                {
+                    "id": 2,
+                    "type": "user_favorite",
+                    "op": "add",
+                    "favorite": {"type": "channel", "id": 5},
+                }
+            ],
+            fetch_event_types=None,
+            client_gravatar=False,
+            slim_presence=False,
+            include_subscribers=False,
+            linkifier_url_template=True,
+            user_list_incomplete=False,
+            include_deactivated_groups=False,
+        )
+        self.assertEqual(
+            state["favorites"], [{"type": "channel", "id": 5}]
+        )
+
+        apply_events(
+            user_profile=hamlet,
+            state=state,
+            events=[
+                {
+                    "id": 3,
+                    "type": "user_favorite",
+                    "op": "remove",
+                    "favorite": {"type": "channel", "id": 5},
+                }
+            ],
+            fetch_event_types=None,
+            client_gravatar=False,
+            slim_presence=False,
+            include_subscribers=False,
+            linkifier_url_template=True,
+            user_list_incomplete=False,
+            include_deactivated_groups=False,
+        )
+        self.assertEqual(state["favorites"], [])

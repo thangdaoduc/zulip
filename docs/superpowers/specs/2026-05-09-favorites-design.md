@@ -223,9 +223,37 @@ One Django migration creating `zerver_userfavorite` with the table, indexes, and
 
 ## 11. Documentation
 
-- API: new entries in `zerver/openapi/zulip.yaml` for `POST /users/me/favorites` and `DELETE /users/me/favorites/{recipient_id}`, plus the new `user_favorite` event type. Reference the changelog file in `**Changes**` notes.
-- API changelog: `tools/create-api-changelog` to generate `api_docs/unmerged.d/ZF-XXXXXX.md` describing the new endpoints, the new `favorites` field in `/register`, and the new event.
-- Help center: a new MDX article at `starlight_help/src/content/docs/favorites.mdx` describing the feature, with a sidebar entry in `astro.config.mjs`.
+Documentation is a first-class deliverable so the web client, mobile/terminal clients, and third-party API consumers can all implement against the same contract without reading server code.
+
+### API reference (for all clients)
+
+- `zerver/openapi/zulip.yaml`: full OpenAPI definitions for
+  - `POST /users/me/favorites` (request schema, responses, error codes)
+  - `DELETE /users/me/favorites` (same body shape as POST)
+  - the new `favorites` field in the `/register` response
+  - the new `user_favorite` event type, including `op="add"` and `op="remove"`, with the shared `favorite: {type, id}` sub-schema referenced from a single component
+- API changelog: run `tools/create-api-changelog` to generate `api_docs/unmerged.d/ZF-XXXXXX.md` listing the new endpoints, new `/register` field, and new event. Reference this file from the `**Changes**` notes in `zulip.yaml`.
+
+### Behavior contract (must be explicit in the API docs)
+
+The OpenAPI prose must spell out the rules that clients (web, mobile, terminal, integrations) need to implement consistently:
+
+- `{type, id}` shape and what `id` means for each `type`.
+- Idempotency of POST and DELETE.
+- Validation rules and exact 400 error shapes.
+- Auto-cleanup behavior — clients must handle unsolicited `user_favorite/remove` events caused by unsubscribe, stream archive, or user deactivation.
+- Event ordering guarantees (events arrive after the corresponding subscription/deactivation events that triggered cleanup).
+- Idempotent client handling (replaying add/remove on reconnect is safe).
+
+### Help center (end-user docs)
+
+- New MDX article at `starlight_help/src/content/docs/favorites.mdx` covering: what favorites are, how they differ from pinned channels, how to add/remove via context menu and channel/user info, what happens when you unsubscribe or the other user is deactivated.
+- Sidebar entry in `starlight_help/astro.config.mjs`.
+- Screenshots of the Favorites section in light/dark themes.
+
+### Developer docs
+
+- Short note in `docs/subsystems/events-system.md` (or the closest existing file) describing the `user_favorite` event and its cleanup-trigger semantics, so future contributors know to emit it from any new code path that revokes access.
 
 ## 12. Commit plan (preview)
 

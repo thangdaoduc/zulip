@@ -45,46 +45,61 @@ Allowed `recipient.type` values, enforced at the view layer:
 
 ## 4. API
 
+All API and event payloads use the shape `{"type": "stream" | "private", "id": int}`:
+- `type="stream"` → `id` is a `Stream.id`.
+- `type="private"` → `id` is a `UserProfile.id` of the other party in a 1-1 DM.
+
+The server resolves this pair to a `Recipient` row internally; clients never see `recipient_id`.
+
 ### POST `/api/v1/users/me/favorites`
 
-Add the given recipient to the user's favorites. Idempotent — adding an existing favorite returns 200 with no change.
+Add the given target to the user's favorites. Idempotent — adding an existing favorite returns 200 with no change.
 
 Request body:
 ```json
-{ "recipient_id": 12345 }
+{ "type": "stream",  "id": 5 }
+{ "type": "private", "id": 12 }
 ```
 
 Response: `{"result": "success", "msg": ""}`.
 
 Errors:
-- 400 if `recipient_id` does not exist, is the user's own personal recipient, is a `DIRECT_MESSAGE_GROUP`, references a stream the user is not subscribed to, or references a deactivated user / archived stream.
+- 400 if `type` is not `stream`/`private`, the resolved target does not exist, references the user's own user id, references a stream the user is not subscribed to, or references a deactivated user / archived stream.
 - 401 if not authenticated.
 
-### DELETE `/api/v1/users/me/favorites/<recipient_id>`
+### DELETE `/api/v1/users/me/favorites`
 
-Remove the favorite. Idempotent — removing a non-existent favorite returns 200.
+Remove the favorite. Same body shape as POST. Idempotent — removing a non-existent favorite returns 200.
 
 ### Initial state via `/register`
 
 `do_events_register` adds a new top-level field to the response:
 ```json
-"favorites": [123, 456, 789]
+"favorites": [
+  {"type": "stream",  "id": 5},
+  {"type": "private", "id": 12}
+]
 ```
-A flat list of `recipient_id` values. The client looks each one up in its existing stream/user maps to render. One extra query per `/register`:
+The client looks each entry up in its existing stream/user maps. One extra query per `/register`:
 ```sql
-SELECT recipient_id FROM zerver_userfavorite WHERE user_profile_id = ?
+SELECT r.type, r.type_id
+FROM zerver_userfavorite uf
+JOIN zerver_recipient r ON uf.recipient_id = r.id
+WHERE uf.user_profile_id = ?
 ```
-Served by an index-only scan on the `(user_profile_id)` index from `unique_together`.
+Served by an index-only scan on the `(user_profile_id)` index plus a PK lookup per row on `Recipient`. Estimated ~0.5–1 ms for typical favorite counts.
 
 ## 5. Event protocol
 
 A new event type:
 ```json
-{ "type": "user_favorite", "op": "add",    "recipient_id": 123 }
-{ "type": "user_favorite", "op": "remove", "recipient_id": 123 }
+{ "type": "user_favorite", "op": "add",
+  "favorite": {"type": "stream", "id": 5} }
+{ "type": "user_favorite", "op": "remove",
+  "favorite": {"type": "private", "id": 12} }
 ```
 
-Sent via `send_event_on_commit` to the affected user only (single recipient in the event-queue fanout). Mirrors the delivery cost of a `pin_to_top` change.
+Sent via `send_event_on_commit` to the affected user only (single recipient in the event-queue fanout). The cleanup hooks construct the `favorite` object from the source entity (stream or user) without an extra DB lookup. Delivery cost mirrors a `pin_to_top` change.
 
 ## 6. Backend implementation
 
@@ -161,7 +176,7 @@ One Django migration creating `zerver_userfavorite` with the table, indexes, and
 
 ## 9. Performance analysis
 
-**Read path (`/register`):** one extra query, index-only scan on the `(user_profile_id)` index. With ~20 favorites/user expected, ~0.1–0.5 ms. Negligible against the dozens of queries already in `do_events_register`.
+**Read path (`/register`):** one extra query — index scan on `(user_profile_id)` joined to `Recipient` via PK. With ~20 favorites/user expected, ~0.5–1 ms. Negligible against the dozens of queries already in `do_events_register`.
 
 **Write path (toggle):** one INSERT or DELETE, one audit log INSERT, one event delivered to one user's queues. ~2–5 ms, equivalent to a `pin_to_top` toggle.
 

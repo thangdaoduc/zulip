@@ -230,6 +230,7 @@ from zerver.views.user_groups import (
     update_subgroups_of_user_group,
     update_user_group_backend,
 )
+from zerver.views.user_favorites import add_favorite, remove_favorite
 from zerver.views.user_settings import (
     confirm_email_change,
     confirm_email_change_get,
@@ -440,6 +441,11 @@ v1_api_and_json_patterns = [
     rest_path("messages/<int:message_id>/history", GET=get_message_edit_history),
     rest_path("messages/matches_narrow", GET=messages_in_narrow_backend),
     rest_path("users/me/subscriptions/properties", POST=update_subscription_properties_backend),
+    rest_path(
+        "users/me/favorites",
+        POST=(add_favorite, {"intentionally_undocumented"}),
+        DELETE=(remove_favorite, {"intentionally_undocumented"}),
+    ),
     rest_path("users/me/subscriptions/<int:stream_id>", PATCH=update_subscriptions_property),
     rest_path("submessage", POST=process_submessage),
     # New endpoint for handling reactions.

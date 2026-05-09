@@ -101,3 +101,156 @@ class UserFavoriteActionsTest(ZulipTestCase):
 
         with self.capture_send_event_calls(expected_num_events=0):
             do_remove_user_favorite(hamlet, recipient, acting_user=hamlet)
+
+
+class UserFavoriteViewTest(ZulipTestCase):
+    def test_post_channel_favorite(self) -> None:
+        hamlet = self.example_user("hamlet")
+        self.subscribe(hamlet, "Verona")
+        from zerver.models import Stream
+
+        stream = Stream.objects.get(name="Verona", realm=hamlet.realm)
+
+        result = self.api_post(
+            hamlet,
+            "/api/v1/users/me/favorites",
+            {"type": "channel", "id": stream.id},
+)
+        self.assert_json_success(result)
+        self.assertEqual(
+            UserFavorite.objects.filter(
+                user_profile=hamlet,
+                recipient=stream.recipient,
+            ).count(),
+            1,
+        )
+
+    def test_post_dm_favorite(self) -> None:
+        hamlet = self.example_user("hamlet")
+        cordelia = self.example_user("cordelia")
+
+        result = self.api_post(
+            hamlet,
+            "/api/v1/users/me/favorites",
+            {"type": "dm", "user_ids": orjson_dumps([cordelia.id])},
+)
+        self.assert_json_success(result)
+        self.assertEqual(UserFavorite.objects.filter(user_profile=hamlet).count(), 1)
+
+    def test_post_rejects_unsubscribed_channel(self) -> None:
+        hamlet = self.example_user("hamlet")
+        cordelia = self.example_user("cordelia")
+        # Stream that hamlet is not subscribed to.
+        stream = self.make_stream("OnlyCordelia", invite_only=True)
+        self.subscribe(cordelia, "OnlyCordelia")
+
+        result = self.api_post(
+            hamlet,
+            "/api/v1/users/me/favorites",
+            {"type": "channel", "id": stream.id},
+        )
+        self.assert_json_error(result, "Invalid channel ID")
+
+    def test_post_rejects_self_user(self) -> None:
+        hamlet = self.example_user("hamlet")
+
+        result = self.api_post(
+            hamlet,
+            "/api/v1/users/me/favorites",
+            {"type": "dm", "user_ids": orjson_dumps([hamlet.id])},
+)
+        self.assert_json_error(result, "Cannot favorite a DM with yourself")
+
+    def test_post_rejects_group_dm(self) -> None:
+        hamlet = self.example_user("hamlet")
+        cordelia = self.example_user("cordelia")
+        othello = self.example_user("othello")
+
+        result = self.api_post(
+            hamlet,
+            "/api/v1/users/me/favorites",
+            {"type": "dm", "user_ids": orjson_dumps([cordelia.id, othello.id])},
+)
+        self.assert_json_error(
+            result,
+            "Only 1-1 DM favorites are supported (provide exactly one other user_id)",
+        )
+
+    def test_post_rejects_invalid_type(self) -> None:
+        hamlet = self.example_user("hamlet")
+        result = self.api_post(
+            hamlet,
+            "/api/v1/users/me/favorites",
+            {"type": "group", "id": 1},
+)
+        self.assert_json_error_contains(result, "type")
+
+    def test_post_is_idempotent(self) -> None:
+        hamlet = self.example_user("hamlet")
+        self.subscribe(hamlet, "Verona")
+        from zerver.models import Stream
+
+        stream_id = Stream.objects.get(name="Verona", realm=hamlet.realm).id
+
+        for _ in range(2):
+            self.assert_json_success(
+                self.api_post(
+                    hamlet,
+                    "/api/v1/users/me/favorites",
+                    {"type": "channel", "id": stream_id},
+                )
+            )
+        self.assertEqual(UserFavorite.objects.filter(user_profile=hamlet).count(), 1)
+
+    def test_delete_removes_channel_favorite(self) -> None:
+        hamlet = self.example_user("hamlet")
+        self.subscribe(hamlet, "Verona")
+        from zerver.models import Stream
+
+        stream_id = Stream.objects.get(name="Verona", realm=hamlet.realm).id
+
+        self.api_post(
+            hamlet,
+            "/api/v1/users/me/favorites",
+            {"type": "channel", "id": stream_id},
+)
+        result = self.api_delete(
+            hamlet,
+            f"/api/v1/users/me/favorites?type=channel&id={stream_id}",
+        )
+        self.assert_json_success(result)
+        self.assertEqual(UserFavorite.objects.filter(user_profile=hamlet).count(), 0)
+
+    def test_delete_removes_dm_favorite(self) -> None:
+        hamlet = self.example_user("hamlet")
+        cordelia = self.example_user("cordelia")
+        self.api_post(
+            hamlet,
+            "/api/v1/users/me/favorites",
+            {"type": "dm", "user_ids": orjson_dumps([cordelia.id])},
+)
+        result = self.api_delete(
+            hamlet,
+            f"/api/v1/users/me/favorites?type=dm&user_ids=[{cordelia.id}]",
+        )
+        self.assert_json_success(result)
+        self.assertEqual(UserFavorite.objects.filter(user_profile=hamlet).count(), 0)
+
+    def test_delete_is_idempotent(self) -> None:
+        hamlet = self.example_user("hamlet")
+        self.subscribe(hamlet, "Verona")
+        from zerver.models import Stream
+
+        stream_id = Stream.objects.get(name="Verona", realm=hamlet.realm).id
+
+        result = self.api_delete(
+            hamlet,
+            f"/api/v1/users/me/favorites?type=channel&id={stream_id}",
+        )
+        self.assert_json_success(result)
+
+
+def orjson_dumps(value: object) -> str:
+    import orjson
+
+    return orjson.dumps(value).decode()

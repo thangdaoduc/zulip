@@ -402,6 +402,28 @@ the coverage data.
 In the Zulip web app, the data returned by the `register` API is
 available via the `page_params` parameter.
 
+### `user_favorite` events
+
+The `user_favorite` event delivers `add` and `remove` operations for a
+user's favorited channels and 1-1 DMs. The event is fan-out only to the
+affected user.
+
+Cleanup of favorites is centralized in `zerver/actions/user_favorites.py`:
+
+- `do_add_user_favorite` / `do_remove_user_favorite` — explicit toggles
+  from the API.
+- `remove_favorites_for_user_stream_pairs` — used by stream-unsubscribe
+  cleanup in `bulk_remove_subscriptions`.
+- `remove_favorites_for_recipient` — used when a channel is archived.
+- `remove_all_favorites_of_user` — used on user deactivation; emits no
+  events because the user's queues are torn down.
+
+Any new code path that revokes a user's access to a channel, archives a
+channel, or deactivates a user must call into one of these helpers so
+clients see consistent state. Clients must apply add/remove operations
+idempotently — replaying a duplicate add or removing a non-existent
+favorite is safe.
+
 ### Messages
 
 One exception to the protocol described in the last section is the

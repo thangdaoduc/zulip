@@ -1,8 +1,14 @@
 # Favorites for Channels and Direct Messages — Design
 
 **Date:** 2026-05-09
-**Status:** Approved for implementation
+**Status:** Approved for implementation (revised 2026-05-09 to match fork data model)
 **Scope:** Backend + web frontend (mobile/terminal clients out of scope)
+
+## Fork data-model note
+
+This Zulip fork has removed `Recipient.PERSONAL`. All direct messages — both 1-1 and group — are stored as `Recipient.DIRECT_MESSAGE_GROUP` rows pointing at a `DirectMessageGroup` whose participants are encoded by `Subscription` rows. A 1-1 DM is therefore a `DirectMessageGroup` with `group_size = 2`.
+
+The wire format and resolution logic in this spec reflects that reality.
 
 ## 1. Goal
 
@@ -40,16 +46,18 @@ Rationale for one polymorphic table over `Subscription.is_favorite + UserFavorit
 
 Allowed `recipient.type` values, enforced at the view layer:
 - `Recipient.STREAM` — only if the user has an active `Subscription` to that stream and the stream is not archived.
-- `Recipient.PERSONAL` — only if the target user is active and not the requesting user themselves.
-- `Recipient.DIRECT_MESSAGE_GROUP` — rejected with HTTP 400 for now.
+- `Recipient.DIRECT_MESSAGE_GROUP` with `group_size == 2` — only if the other participant is active. Group DMs (`group_size >= 3`) are rejected with HTTP 400 for now.
 
 ## 4. API
 
-All API and event payloads use the shape `{"type": "stream" | "private", "id": int}`:
-- `type="stream"` → `id` is a `Stream.id`.
-- `type="private"` → `id` is a `UserProfile.id` of the other party in a 1-1 DM.
+API and event payloads use one of two shapes:
 
-The server resolves this pair to a `Recipient` row internally; clients never see `recipient_id`.
+- **Channel:** `{"type": "channel", "id": <stream_id>}`
+- **1-1 DM:** `{"type": "dm", "user_ids": [<other_user_id>]}`
+
+For DMs, `user_ids` is the list of *other* participants (the requesting user is not included). For 1-1 DMs this is exactly one user id. Group DMs are rejected.
+
+The server resolves these to a `Recipient` row internally — for DMs, by including the requesting user, sorting, and calling `get_or_create_direct_message_group()`. Clients never see `recipient_id` or `direct_message_group_id`.
 
 ### POST `/api/v1/users/me/favorites`
 
@@ -57,14 +65,16 @@ Add the given target to the user's favorites. Idempotent — adding an existing 
 
 Request body:
 ```json
-{ "type": "stream",  "id": 5 }
-{ "type": "private", "id": 12 }
+{ "type": "channel", "id": 5 }
+{ "type": "dm",      "user_ids": [12] }
 ```
 
 Response: `{"result": "success", "msg": ""}`.
 
 Errors:
-- 400 if `type` is not `stream`/`private`, the resolved target does not exist, references the user's own user id, references a stream the user is not subscribed to, or references a deactivated user / archived stream.
+- 400 if `type` is not `channel`/`dm`.
+- 400 if `type=channel` and the channel does not exist, is archived, or the user is not subscribed.
+- 400 if `type=dm` and `user_ids` is empty, contains the requesting user's own id, contains an inactive user, or has more than one entry (group DMs not yet supported).
 - 401 if not authenticated.
 
 ### DELETE `/api/v1/users/me/favorites`
@@ -76,27 +86,20 @@ Remove the favorite. Same body shape as POST. Idempotent — removing a non-exis
 `do_events_register` adds a new top-level field to the response:
 ```json
 "favorites": [
-  {"type": "stream",  "id": 5},
-  {"type": "private", "id": 12}
+  {"type": "channel", "id": 5},
+  {"type": "dm",      "user_ids": [12]}
 ]
 ```
-The client looks each entry up in its existing stream/user maps. One extra query per `/register`:
-```sql
-SELECT r.type, r.type_id
-FROM zerver_userfavorite uf
-JOIN zerver_recipient r ON uf.recipient_id = r.id
-WHERE uf.user_profile_id = ?
-```
-Served by an index-only scan on the `(user_profile_id)` index plus a PK lookup per row on `Recipient`. Estimated ~0.5–1 ms for typical favorite counts.
+For DM entries, `user_ids` is computed by querying the participants of each `DirectMessageGroup` recipient and excluding the requesting user. The query joins `UserFavorite` → `Recipient` → `Subscription` (for DMG participants) and is described in the performance section.
 
 ## 5. Event protocol
 
 A new event type:
 ```json
 { "type": "user_favorite", "op": "add",
-  "favorite": {"type": "stream", "id": 5} }
+  "favorite": {"type": "channel", "id": 5} }
 { "type": "user_favorite", "op": "remove",
-  "favorite": {"type": "private", "id": 12} }
+  "favorite": {"type": "dm", "user_ids": [12]} }
 ```
 
 Sent via `send_event_on_commit` to the affected user only (single recipient in the event-queue fanout). The cleanup hooks construct the `favorite` object from the source entity (stream or user) without an extra DB lookup. Delivery cost mirrors a `pin_to_top` change.
@@ -124,8 +127,9 @@ Inserted at the following call sites; each calls the matching helper above:
 |---|---|---|
 | User unsubscribes from stream | `bulk_remove_subscriptions` (`zerver/actions/streams.py`) | Favorite rows for that user × that stream's recipient |
 | Stream archived | `do_deactivate_stream` (`zerver/actions/streams.py`) | All favorites with that stream's recipient |
-| User deactivated | `do_deactivate_user` (`zerver/actions/users.py`) | (a) all favorites of that user; (b) all favorites pointing to that user's PERSONAL recipient |
-| User reactivated | none | No action — favorites pointing to a deactivated personal recipient are already cleaned at deactivation time |
+| User deactivated | `do_deactivate_user` (`zerver/actions/users.py`) | All favorites *owned by* the deactivated user (channels + DMs) |
+
+Note on DM cleanup: with the fork's data model, `DirectMessageGroup` rows persist after a participant is deactivated; `Subscription.is_user_active` simply flips to false. We therefore do **not** auto-remove a still-active user's DM favorites pointing at a now-deactivated partner. The client renders the partner as deactivated; if the user later wants to drop the favorite, they remove it manually. This keeps deactivation cheap and avoids cross-realm fan-out.
 
 Each hook batches into a single DELETE query and emits one event per affected (user, recipient) pair.
 

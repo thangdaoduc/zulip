@@ -10,6 +10,14 @@
 
 **Spec:** [`docs/superpowers/specs/2026-05-09-favorites-design.md`](../specs/2026-05-09-favorites-design.md). Read it before starting.
 
+**Fork data-model note:** This Zulip fork has removed `Recipient.PERSONAL`. All DMs use `Recipient.DIRECT_MESSAGE_GROUP`. 1-1 DMs are `DirectMessageGroup` rows with `group_size == 2`. The wire format uses `{type:"channel", id:stream_id}` for channels and `{type:"dm", user_ids:[other_user_id]}` for 1-1 DMs.
+
+**Dev environment:** The local Python venv is broken on the host. All Django/test commands run inside the vagrant container:
+```bash
+vagrant ssh -c 'cd /home/thangdao/Documents/hoanggia.proj/code/zulip && <command> 2>&1' 2>&1 | tail -30
+```
+The container shares the host filesystem at the same path; edits propagate immediately.
+
 **Per-task expectations** (apply to every task unless noted):
 - Run `./tools/lint <changed files>` before each commit. Fix mypy and TypeScript errors.
 - Each commit must pass tests on its own (`./tools/test-backend zerver.tests.test_user_favorites` or the relevant subset).

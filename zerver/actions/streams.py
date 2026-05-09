@@ -135,6 +135,12 @@ def do_deactivate_stream(stream: Stream, *, acting_user: UserProfile | None) -> 
     maybe_set_moderation_or_announcement_channels_none(stream)
 
     assert stream.recipient_id is not None
+
+    # Drop favorites pointing at this channel for all subscribers.
+    from zerver.actions.user_favorites import remove_favorites_for_recipient
+
+    remove_favorites_for_recipient(stream.recipient)
+
     if was_web_public:
         assert was_public
         # Unset the is_web_public and is_realm_public cache on attachments,
@@ -1154,6 +1160,19 @@ def bulk_remove_subscriptions(
 
         # Now since we have all log objects generated we can do a bulk insert
         RealmAuditLog.objects.bulk_create(all_subscription_logs)
+
+        # Drop favorites for the removed (user, channel) pairs.
+        from zerver.actions.user_favorites import (
+            remove_favorites_for_user_stream_pairs,
+        )
+
+        remove_favorites_for_user_stream_pairs(
+            [
+                (sub_info.user.id, sub_info.stream.recipient_id)
+                for sub_info in subs_to_deactivate
+                if sub_info.stream.recipient_id is not None
+            ]
+        )
 
     removed_sub_tuples = [(sub_info.user, sub_info.stream) for sub_info in subs_to_deactivate]
     send_subscription_remove_events(

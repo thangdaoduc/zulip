@@ -503,6 +503,10 @@ def do_deactivate_user(
     with transaction.atomic(savepoint=False):
         change_user_is_active(user_profile, False)
 
+        from zerver.actions.user_favorites import remove_all_favorites_of_user
+
+        remove_all_favorites_of_user(user_profile)
+
         clear_scheduled_emails([user_profile.id])
         if deactivate_user_actions is not None:
             if deactivate_user_actions.delete_profile:

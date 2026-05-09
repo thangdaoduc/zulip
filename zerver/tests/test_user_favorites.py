@@ -256,6 +256,78 @@ def orjson_dumps(value: object) -> str:
     return orjson.dumps(value).decode()
 
 
+class FavoriteCleanupTest(ZulipTestCase):
+    def test_unsubscribe_removes_channel_favorite(self) -> None:
+        from zerver.actions.streams import bulk_remove_subscriptions
+        from zerver.models import Stream
+
+        hamlet = self.example_user("hamlet")
+        self.subscribe(hamlet, "Verona")
+        stream = Stream.objects.get(name="Verona", realm=hamlet.realm)
+        do_add_user_favorite(hamlet, stream.recipient, acting_user=hamlet)
+
+        self.assertEqual(UserFavorite.objects.filter(user_profile=hamlet).count(), 1)
+
+        bulk_remove_subscriptions(
+            hamlet.realm, [hamlet], [stream], acting_user=hamlet
+        )
+        self.assertEqual(UserFavorite.objects.filter(user_profile=hamlet).count(), 0)
+
+    def test_archive_stream_removes_all_favorites(self) -> None:
+        from zerver.actions.streams import do_deactivate_stream
+        from zerver.models import Stream
+
+        hamlet = self.example_user("hamlet")
+        cordelia = self.example_user("cordelia")
+        self.subscribe(hamlet, "Verona")
+        self.subscribe(cordelia, "Verona")
+        stream = Stream.objects.get(name="Verona", realm=hamlet.realm)
+        do_add_user_favorite(hamlet, stream.recipient, acting_user=hamlet)
+        do_add_user_favorite(cordelia, stream.recipient, acting_user=cordelia)
+
+        do_deactivate_stream(stream, acting_user=hamlet)
+
+        self.assertEqual(
+            UserFavorite.objects.filter(recipient=stream.recipient).count(), 0
+        )
+
+    def test_deactivate_user_removes_their_favorites(self) -> None:
+        from zerver.actions.users import do_deactivate_user
+        from zerver.models import Stream
+
+        hamlet = self.example_user("hamlet")
+        self.subscribe(hamlet, "Verona")
+        stream = Stream.objects.get(name="Verona", realm=hamlet.realm)
+        do_add_user_favorite(hamlet, stream.recipient, acting_user=hamlet)
+
+        do_deactivate_user(hamlet, acting_user=None)
+
+        self.assertEqual(UserFavorite.objects.filter(user_profile=hamlet).count(), 0)
+
+    def test_deactivate_user_does_not_clean_others_dm_favorites(self) -> None:
+        """When a DM partner is deactivated, the still-active user keeps the favorite.
+
+        With the fork's data model, DirectMessageGroup rows persist after
+        a participant is deactivated; we don't fan out cleanup events.
+        """
+        from zerver.actions.users import do_deactivate_user
+        from zerver.models.recipients import get_or_create_direct_message_group
+
+        hamlet = self.example_user("hamlet")
+        cordelia = self.example_user("cordelia")
+        dmg = get_or_create_direct_message_group(sorted([hamlet.id, cordelia.id]))
+        assert dmg.recipient is not None
+        do_add_user_favorite(hamlet, dmg.recipient, acting_user=hamlet)
+
+        do_deactivate_user(cordelia, acting_user=None)
+
+        self.assertTrue(
+            UserFavorite.objects.filter(
+                user_profile=hamlet, recipient=dmg.recipient
+            ).exists()
+        )
+
+
 class FavoriteRegisterTest(ZulipTestCase):
     def test_register_includes_favorites(self) -> None:
         from zerver.lib.user_favorites import get_user_favorites

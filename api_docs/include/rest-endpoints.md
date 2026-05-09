@@ -116,6 +116,8 @@
 * [Get user group members](/api/get-user-group-members)
 * [Get subgroups of a user group](/api/get-user-group-subgroups)
 * [Mute a user](/api/mute-user)
+* [Add a favorite](/api/add-favorite)
+* [Remove a favorite](/api/remove-favorite)
 * [Unmute a user](/api/unmute-user)
 * [Get all alert words](/api/get-alert-words)
 * [Add alert words](/api/add-alert-words)

@@ -443,8 +443,8 @@ v1_api_and_json_patterns = [
     rest_path("users/me/subscriptions/properties", POST=update_subscription_properties_backend),
     rest_path(
         "users/me/favorites",
-        POST=(add_favorite, {"intentionally_undocumented"}),
-        DELETE=(remove_favorite, {"intentionally_undocumented"}),
+        POST=add_favorite,
+        DELETE=remove_favorite,
     ),
     rest_path("users/me/subscriptions/<int:stream_id>", PATCH=update_subscriptions_property),
     rest_path("submessage", POST=process_submessage),

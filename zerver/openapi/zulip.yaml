@@ -2729,6 +2729,52 @@ paths:
                             - type: object
                               additionalProperties: false
                               description: |
+                                A `user_favorite` event communicates a
+                                change to the user's set of favorited
+                                channels and 1-1 DMs. It is delivered
+                                only to the affected user.
+
+                                Sent for explicit add/remove operations
+                                made by the user, and also for automatic
+                                cleanup when:
+
+                                * the user unsubscribes from a favorited
+                                  channel,
+                                * a favorited channel is archived,
+                                * the user themselves is deactivated.
+
+                                Cleanup events use `op="remove"`. Clients
+                                must treat add/remove operations as
+                                idempotent — replaying an `add` for an
+                                already-favorited target or a `remove`
+                                for an unknown target is safe.
+
+                                **Changes**: New in Zulip 12.0 (feature
+                                level ZF-b748fe).
+                              required: [id, type, op, favorite]
+                              properties:
+                                id:
+                                  $ref: "#/components/schemas/EventIdSchema"
+                                type:
+                                  allOf:
+                                    - $ref: "#/components/schemas/EventTypeSchema"
+                                    - enum:
+                                        - user_favorite
+                                op:
+                                  type: string
+                                  enum: [add, remove]
+                                favorite:
+                                  $ref: "#/components/schemas/FavoriteTarget"
+                              example:
+                                {
+                                  "type": "user_favorite",
+                                  "op": "add",
+                                  "favorite": {"type": "channel", "id": 5},
+                                  "id": 0,
+                                }
+                            - type: object
+                              additionalProperties: false
+                              description: |
                                 Heartbeat events are sent by the server to avoid
                                 longpolling connections being affected by networks that
                                 kill idle HTTP connections.
@@ -16128,6 +16174,119 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/SuccessIgnoredParameters"
+  /users/me/favorites:
+    post:
+      operationId: add-favorite
+      summary: Add a favorite
+      tags: ["users"]
+      description: |
+        Mark a channel or 1-1 DM as a favorite. Favorites surface in a
+        dedicated section of the left sidebar in the web client and are
+        synced across the user's sessions via the [`user_favorite`
+        event](/api/get-events#user_favorite).
+
+        The request body is a [`FavoriteTarget`](#tag/users) object. For
+        channels: `{"type": "channel", "id": <stream_id>}`. For 1-1 DMs:
+        `{"type": "dm", "user_ids": [<other_user_id>]}` — `user_ids`
+        contains the *other* participant only.
+
+        This endpoint is idempotent: adding an already-favorited target
+        succeeds without modifying state and does not emit a redundant
+        event.
+
+        Server-side cleanup automatically removes a favorite when:
+
+        * the user unsubscribes from a favorited channel,
+        * a favorited channel is archived,
+        * the user themselves is deactivated.
+
+        Cleanup is delivered to active sessions via `user_favorite`
+        events with `op="remove"`. Clients must apply add/remove events
+        idempotently.
+
+        **Changes**: New in Zulip 12.0 (feature level ZF-b748fe).
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [type]
+              properties:
+                type:
+                  type: string
+                  enum: [channel, dm]
+                  description: |
+                    Discriminates the favorite kind. See
+                    [`FavoriteTarget`](#components/schemas/FavoriteTarget).
+                id:
+                  type: integer
+                  description: |
+                    Required when `type=channel`. The channel's `stream_id`.
+                user_ids:
+                  type: array
+                  items:
+                    type: integer
+                  description: |
+                    Required when `type=dm`. Single-element list with the
+                    other party's `user_id`. Sent as JSON-encoded list.
+                  example: [12]
+            encoding:
+              user_ids:
+                contentType: application/json
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JsonSuccess"
+    delete:
+      operationId: remove-favorite
+      summary: Remove a favorite
+      tags: ["users"]
+      description: |
+        Remove a favorite. Same target shape as
+        [`POST /users/me/favorites`](/api/add-favorite); the parameters
+        may be passed in the query string or request body. Idempotent:
+        removing a non-favorite succeeds without sending an event.
+
+        **Changes**: New in Zulip 12.0 (feature level ZF-b748fe).
+      parameters:
+        - name: type
+          in: query
+          required: true
+          description: |
+            Discriminates the favorite kind: `channel` or `dm`.
+          schema:
+            type: string
+            enum: [channel, dm]
+        - name: id
+          in: query
+          required: false
+          description: Required when `type=channel`. The channel's `stream_id`.
+          schema:
+            type: integer
+        - name: user_ids
+          in: query
+          required: false
+          description: |
+            Required when `type=dm`. JSON-encoded single-element list with
+            the other party's `user_id`.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JsonSuccess"
   /users/me/subscriptions/{stream_id}:
     patch:
       operationId: update-subscription-property
@@ -18630,6 +18789,25 @@ paths:
                               type: integer
                               description: |
                                 An integer UNIX timestamp representing when the user was muted.
+                      favorites:
+                        type: array
+                        description: |
+                          Present if `user_favorite` is present in
+                          `fetch_event_types`.
+
+                          The user's favorited channels and 1-1 DMs. Each
+                          entry is a [`FavoriteTarget`](#components/schemas/FavoriteTarget)
+                          object: either `{"type": "channel", "id": stream_id}`
+                          or `{"type": "dm", "user_ids": [other_user_id]}`.
+
+                          The list is unordered; clients sort it as they
+                          see fit (Zulip's web client sorts by recent
+                          activity).
+
+                          **Changes**: New in Zulip 12.0 (feature level
+                          ZF-b748fe).
+                        items:
+                          $ref: "#/components/schemas/FavoriteTarget"
                       presences:
                         type: object
                         description: |
@@ -29948,6 +30126,39 @@ components:
             msg: {}
             ignored_parameters_unsupported: {}
           example: {"msg": "", "result": "success"}
+    FavoriteTarget:
+      description: |
+        Identifies a favorite target. The shape depends on `type`:
+
+        - `type = "channel"` — the favorite is a channel; `id` is the
+          channel's `stream_id`.
+        - `type = "dm"` — the favorite is a 1-1 direct message
+          conversation; `user_ids` is a single-element list containing the
+          *other* participant's `user_id` (the requesting user is implicit
+          and must not be included).
+
+        Group DMs (more than one entry in `user_ids`) are not yet
+        supported and are rejected.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [channel, dm]
+        id:
+          type: integer
+          description: |
+            Required when `type=channel`. The channel's `stream_id`.
+        user_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            Required when `type=dm`. Must contain exactly one entry: the
+            `user_id` of the other party in the 1-1 DM. Must not contain
+            the requesting user's own `user_id`.
+      example: {"type": "channel", "id": 5}
     JsonSuccessBase:
       description: |
         **Changes**: As of Zulip 7.0 (feature level 167), if any
